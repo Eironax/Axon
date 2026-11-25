@@ -1,0 +1,24 @@
+# Python & uv
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Model weights, caches, and generated artifacts
+models/
+*.pt
+*.pth
+*.bin
+*.safetensors
+.hf_cache/
+artifacts/
+logs/
