@@ -20,9 +20,14 @@ class AxonSettings(BaseSettings):
     torch_dtype: Literal["bfloat16", "float16", "float32"] = "bfloat16"
     device: str = "cuda"
     default_layer: int = 14
+    artifacts_dir: str = "artifacts/vectors"
 
     postgres_dsn: str = "postgresql://axon:axon@localhost:5432/axon"
     redis_url: str = "redis://localhost:6379/0"
+
+    auto_seed_db: bool = True
+    mock_engine: bool = False
+    max_concurrent_generations: int = 1
 
 
 @lru_cache(maxsize=1)

@@ -1,0 +1,13 @@
+.git/
+.venv/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+artifacts/*
+!artifacts/vectors/
+models/
+logs/
+*.log

@@ -1,15 +1,20 @@
-"""Command-line entrypoints for calibrating, evaluating, and testing Axon."""
+"""Command-line entrypoints for calibrating, evaluating, seeding, and serving Axon."""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
+import uvicorn
+
 from axon.config import get_settings
 from axon.engine.benchmark import calibrate_all_policies, run_eval_suite
 from axon.engine.calibrate import load_calibration_artifact
+from axon.engine.datasets import POLICY_DATASETS
 from axon.engine.firewall import LatentFirewall, SteeringPolicy
 from axon.engine.model import load_model_and_tokenizer
+from axon.storage.cache import AxonRedisCache
+from axon.storage.db import AxonDatabase
 
 
 def _cmd_calibrate(args: argparse.Namespace) -> None:
@@ -96,9 +101,7 @@ def _cmd_generate(args: argparse.Namespace) -> None:
     policy: SteeringPolicy | None = None
     if args.policy != "none":
         artifact = load_calibration_artifact(Path(args.artifacts_dir), args.policy)
-        threshold = (
-            args.threshold if args.threshold is not None else artifact.recommended_threshold
-        )
+        threshold = args.threshold if args.threshold is not None else artifact.recommended_threshold
         policy = SteeringPolicy(
             name=f"{args.policy}_v1",
             category=args.policy,
@@ -123,6 +126,25 @@ def _cmd_generate(args: argparse.Namespace) -> None:
         f"ttft={result.ttft_ms:.1f}ms tps={result.tokens_per_sec:.1f}]\n"
     )
     print(result.response_text)
+
+
+def _cmd_seed_db(args: argparse.Namespace) -> None:
+    settings = get_settings()
+    db = AxonDatabase(settings.postgres_dsn)
+    cache = AxonRedisCache(settings.redis_url)
+    try:
+        db.ensure_schema()
+        seeded = db.seed_from_artifacts(Path(args.artifacts_dir), POLICY_DATASETS)
+        rows = db.get_active_policies_with_vectors()
+        version = cache.publish_active_policies(rows)
+        print(f"Seeded policies: {seeded or 'already present'} | Active Redis version: {version}")
+    finally:
+        cache.close()
+        db.close()
+
+
+def _cmd_serve(args: argparse.Namespace) -> None:
+    uvicorn.run("axon.api.app:app", host=args.host, port=args.port, reload=args.reload)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -169,6 +191,18 @@ def build_parser() -> argparse.ArgumentParser:
     p_gen.add_argument("--max-new-tokens", type=int, default=128)
     p_gen.add_argument("--model-id", default=None)
     p_gen.set_defaults(func=_cmd_generate)
+
+    p_seed = sub.add_parser(
+        "seed-db", help="Initialize schema and seed vectors into Postgres/Redis"
+    )
+    p_seed.add_argument("--artifacts-dir", default="artifacts/vectors")
+    p_seed.set_defaults(func=_cmd_seed_db)
+
+    p_srv = sub.add_parser("serve", help="Start FastAPI inference firewall server")
+    p_srv.add_argument("--host", default="0.0.0.0")
+    p_srv.add_argument("--port", type=int, default=8000)
+    p_srv.add_argument("--reload", action="store_true")
+    p_srv.set_defaults(func=_cmd_serve)
 
     return parser
 

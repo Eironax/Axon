@@ -1,0 +1,133 @@
+{
+  "id": null,
+  "uid": "axon-firewall-overview",
+  "title": "Axon Latent Firewall & Steering Telemetry",
+  "tags": ["axon", "llm", "firewall", "pgvector"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Active Queue Depth",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "axon_active_queue_depth", "legendFormat": "Queue Depth", "refId": "A" }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "CUDA VRAM Allocated (GiB)",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "axon_vram_allocated_bytes / 1073741824",
+          "legendFormat": "VRAM GiB",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "decgbytes", "decimals": 2 } }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Total Firewall Requests",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(axon_requests_total)", "legendFormat": "Requests", "refId": "A" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Total Interventions",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(axon_interventions_total)", "legendFormat": "Interventions", "refId": "A" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Forward-Hook Latency Quantiles (ms)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(axon_hook_latency_ms_bucket[5m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(axon_hook_latency_ms_bucket[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(axon_hook_latency_ms_bucket[5m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "TTFT p50 / p95 (ms)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(axon_ttft_ms_bucket[5m])) by (le))",
+          "legendFormat": "p95 TTFT",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(axon_ttft_ms_bucket[5m])) by (le))",
+          "legendFormat": "p50 TTFT",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "SQL Policy Version Rollup (PostgreSQL)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "postgres", "uid": "axon-postgres" },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(p.name, 'baseline_unsteered') AS policy, COALESCE(p.version, 0) AS version, COUNT(*) AS requests, SUM(CASE WHEN l.intervened THEN 1 ELSE 0 END) AS intervened, ROUND((AVG(CASE WHEN l.intervened THEN 1.0 ELSE 0.0 END) * 100)::numeric, 1) AS intervene_pct, ROUND(AVG(l.prefill_cosine_sim)::numeric, 4) AS avg_prefill_sim, ROUND(AVG(l.hook_avg_ms)::numeric, 3) AS avg_hook_ms FROM inference_audit_logs l LEFT JOIN steering_policies p ON p.id = l.policy_id GROUP BY p.name, p.version ORDER BY requests DESC;",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Recent Flagged Interventions (PostgreSQL)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "postgres", "uid": "axon-postgres" },
+      "targets": [
+        {
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT l.created_at, COALESCE(p.name, 'baseline') AS policy, ROUND(l.prefill_cosine_sim::numeric, 4) AS prefill_sim, ROUND(l.hook_avg_ms::numeric, 3) AS hook_ms, l.prompt_preview FROM inference_audit_logs l LEFT JOIN steering_policies p ON p.id = l.policy_id WHERE l.intervened = TRUE ORDER BY l.created_at DESC LIMIT 20;",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: axon-api
+  namespace: axon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: axon-api
+  template:
+    metadata:
+      labels:
+        app: axon-api
+    spec:
+      containers:
+        - name: axon-api
+          image: axon:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            - name: AXON_POSTGRES_DSN
+              value: postgresql://axon:axon@axon-postgres.axon.svc.cluster.local:5432/axon
+            - name: AXON_REDIS_URL
+              value: redis://axon-redis.axon.svc.cluster.local:6379/0
+            - name: AXON_DEVICE
+              value: cuda
+            - name: AXON_TORCH_DTYPE
+              value: bfloat16
+            - name: AXON_MAX_CONCURRENT_GENERATIONS
+              value: "1"
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              memory: "4Gi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: axon-api
+  namespace: axon
+spec:
+  selector:
+    app: axon-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

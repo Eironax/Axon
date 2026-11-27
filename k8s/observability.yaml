@@ -1,0 +1,144 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: axon-prometheus-config
+  namespace: axon
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 5s
+      evaluation_interval: 5s
+    scrape_configs:
+      - job_name: "axon-api"
+        metrics_path: "/metrics"
+        static_configs:
+          - targets: ["axon-api.axon.svc.cluster.local:8000"]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: axon-prometheus
+  namespace: axon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: axon-prometheus
+  template:
+    metadata:
+      labels:
+        app: axon-prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:latest
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus/prometheus.yml
+              subPath: prometheus.yml
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              memory: "384Mi"
+      volumes:
+        - name: config
+          configMap:
+            name: axon-prometheus-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: axon-prometheus
+  namespace: axon
+spec:
+  selector:
+    app: axon-prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: axon-grafana-datasources
+  namespace: axon
+data:
+  datasources.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        uid: prometheus
+        type: prometheus
+        access: proxy
+        url: http://axon-prometheus.axon.svc.cluster.local:9090
+        isDefault: true
+      - name: Axon PostgreSQL
+        uid: axon-postgres
+        type: postgres
+        access: proxy
+        url: axon-postgres.axon.svc.cluster.local:5432
+        user: axon
+        secureJsonData:
+          password: axon
+        jsonData:
+          database: axon
+          sslmode: disable
+          postgresVersion: 1700
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: axon-grafana
+  namespace: axon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: axon-grafana
+  template:
+    metadata:
+      labels:
+        app: axon-grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: admin
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: admin
+            - name: GF_USERS_ALLOW_SIGN_UP
+              value: "false"
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources/datasources.yml
+              subPath: datasources.yml
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "128Mi"
+            limits:
+              memory: "384Mi"
+      volumes:
+        - name: datasources
+          configMap:
+            name: axon-grafana-datasources
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: axon-grafana
+  namespace: axon
+spec:
+  selector:
+    app: axon-grafana
+  ports:
+    - port: 3000
+      targetPort: 3000

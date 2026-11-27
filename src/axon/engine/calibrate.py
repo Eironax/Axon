@@ -247,7 +247,7 @@ def calibrate_policy(
             )
         )
 
-    best = max(scores, key=lambda s: (s.loo_accuracy + 0.5 * max(0.0, s.loo_separation)))
+    best = max(scores, key=lambda s: s.loo_accuracy + 0.5 * max(0.0, s.loo_separation))
     return CalibrationResult(
         category=category,
         model_id=model_id,

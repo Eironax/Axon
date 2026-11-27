@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: axon-postgres
+  namespace: axon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: axon-postgres
+  template:
+    metadata:
+      labels:
+        app: axon-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: pgvector/pgvector:pg17
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: axon
+            - name: POSTGRES_PASSWORD
+              value: axon
+            - name: POSTGRES_DB
+              value: axon
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "axon", "-d", "axon"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: axon-postgres
+  namespace: axon
+spec:
+  selector:
+    app: axon-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

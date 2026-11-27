@@ -1,0 +1,19 @@
+# Queue-depth Horizontal Pod Autoscaling managed via KEDA + Prometheus.
+# maxReplicaCount is explicitly capped at 2 to stay within a single 8GB VRAM / 16GB RAM host envelope.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: axon-api-queue-scaler
+  namespace: axon
+spec:
+  scaleTargetRef:
+    name: axon-api
+  pollingInterval: 5
+  minReplicaCount: 1
+  maxReplicaCount: 2
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://axon-prometheus.axon.svc.cluster.local:9090
+        query: max(axon_active_queue_depth) or vector(0)
+        threshold: "1"

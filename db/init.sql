@@ -2,7 +2,7 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 1. Calibration runs track which model, layer, and prompt pairs produced a steering vector
+-- 1. Calibration runs track which model, layer, and prompt pairs produced steering vectors
 CREATE TABLE IF NOT EXISTS calibration_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     model_id TEXT NOT NULL,
@@ -31,13 +31,15 @@ CREATE TABLE IF NOT EXISTS steering_policies (
     layer_idx INTEGER NOT NULL,
     similarity_threshold REAL NOT NULL CHECK (similarity_threshold >= -1.0 AND similarity_threshold <= 1.0),
     alpha REAL NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'prefill_only',
+    method TEXT NOT NULL DEFAULT 'additive',
     is_active BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (name, version)
 );
 
--- 3. Vector storage (dim 1536 matches Qwen2.5-1.5B-Instruct hidden_size)
+-- 3. Dual vector storage (dim 1536 matches Qwen2.5-1.5B-Instruct hidden_size)
 CREATE TABLE IF NOT EXISTS steering_vectors (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     policy_id UUID NOT NULL REFERENCES steering_policies(id) ON DELETE CASCADE,
@@ -46,6 +48,7 @@ CREATE TABLE IF NOT EXISTS steering_vectors (
     l2_norm REAL NOT NULL,
     eval_separation_score REAL,
     embedding vector(1536) NOT NULL,
+    detector_embedding vector(1536) NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (policy_id)
 );
@@ -53,7 +56,7 @@ CREATE TABLE IF NOT EXISTS steering_vectors (
 -- 4. Immutable firewall audit ledger + async prefill activation snapshots for drift clustering
 CREATE TABLE IF NOT EXISTS inference_audit_logs (
     id BIGSERIAL PRIMARY KEY,
-    request_id UUID NOT NULL,
+    request_id UUID NOT NULL UNIQUE,
     policy_id UUID REFERENCES steering_policies(id) ON DELETE SET NULL,
     model_id TEXT NOT NULL,
     prompt_sha256 TEXT NOT NULL,
@@ -70,6 +73,11 @@ CREATE TABLE IF NOT EXISTS inference_audit_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Forward-compatible additive column guards for existing volumes
+ALTER TABLE steering_policies ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'prefill_only';
+ALTER TABLE steering_policies ADD COLUMN IF NOT EXISTS method TEXT NOT NULL DEFAULT 'additive';
+ALTER TABLE steering_vectors ADD COLUMN IF NOT EXISTS detector_embedding vector(1536);
+
 -- Query & vector indexes
 CREATE INDEX IF NOT EXISTS idx_policies_active
     ON steering_policies (is_active, category);
@@ -82,6 +90,9 @@ CREATE INDEX IF NOT EXISTS idx_audit_intervened
 
 CREATE INDEX IF NOT EXISTS idx_steering_vectors_hnsw
     ON steering_vectors USING hnsw (embedding vector_cosine_ops);
+
+CREATE INDEX IF NOT EXISTS idx_steering_detector_hnsw
+    ON steering_vectors USING hnsw (detector_embedding vector_cosine_ops);
 
 CREATE INDEX IF NOT EXISTS idx_audit_prefill_hnsw
     ON inference_audit_logs USING hnsw (prefill_activation vector_cosine_ops)

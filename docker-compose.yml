@@ -63,6 +63,7 @@ services:
       - "3000:3000"
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - axon_grafanadata:/var/lib/grafana
     depends_on:
       - prometheus
@@ -72,7 +73,36 @@ services:
         limits:
           memory: 384M
 
+  axon-api:
+    build: .
+    image: axon:latest
+    container_name: axon-api
+    profiles: ["gpu"]
+    environment:
+      AXON_POSTGRES_DSN: postgresql://axon:axon@postgres:5432/axon
+      AXON_REDIS_URL: redis://redis:6379/0
+      AXON_DEVICE: cuda
+      AXON_TORCH_DTYPE: bfloat16
+      HF_HOME: /home/axon/.cache/huggingface
+    ports:
+      - "8000:8000"
+    volumes:
+      - axon_hf_cache:/home/axon/.cache/huggingface
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
 volumes:
   axon_pgdata:
   axon_promdata:
   axon_grafanadata:
+  axon_hf_cache:

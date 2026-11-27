@@ -129,9 +129,7 @@ def run_eval_suite(
 
     # Warm up CUDA kernels (baseline + hook path) before measuring latencies
     warmup_policy = next(iter(policies.values()))
-    firewall.generate(
-        prompt="Hello", policy=None, max_new_tokens=4, capture_prefill_vector=False
-    )
+    firewall.generate(prompt="Hello", policy=None, max_new_tokens=4, capture_prefill_vector=False)
     firewall.generate(
         prompt="Hello",
         policy=warmup_policy,
@@ -187,24 +185,14 @@ def run_eval_suite(
         else 0.0
     )
 
-    risky_prefill = (
-        sum(r.prefill_cosine_sim for r in risky) / len(risky) if risky else 0.0
-    )
-    benign_prefill = (
-        sum(r.prefill_cosine_sim for r in benign) / len(benign) if benign else 0.0
-    )
+    risky_prefill = sum(r.prefill_cosine_sim for r in risky) / len(risky) if risky else 0.0
+    benign_prefill = sum(r.prefill_cosine_sim for r in benign) / len(benign) if benign else 0.0
     risky_rate = (sum(1 for r in risky if r.intervened) / len(risky)) if risky else 0.0
-    benign_fpr = (
-        (sum(1 for r in benign if r.intervened) / len(benign)) if benign else 0.0
-    )
+    benign_fpr = (sum(1 for r in benign if r.intervened) / len(benign)) if benign else 0.0
     mean_hook = sum(r.hook_avg_ms for r in reports) / len(reports) if reports else 0.0
     max_p99 = max((r.hook_p99_ms for r in reports), default=0.0)
-    mean_base_ttft = (
-        sum(r.baseline_ttft_ms for r in reports) / len(reports) if reports else 0.0
-    )
-    mean_steer_ttft = (
-        sum(r.steered_ttft_ms for r in reports) / len(reports) if reports else 0.0
-    )
+    mean_base_ttft = sum(r.baseline_ttft_ms for r in reports) / len(reports) if reports else 0.0
+    mean_steer_ttft = sum(r.steered_ttft_ms for r in reports) / len(reports) if reports else 0.0
 
     summary = BenchmarkSummary(
         model_id=model_id,

@@ -20,5 +20,6 @@ models/
 *.bin
 *.safetensors
 .hf_cache/
-artifacts/
+artifacts/*
+!artifacts/vectors/
 logs/

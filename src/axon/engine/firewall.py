@@ -265,6 +265,63 @@ class LatentFirewall:
         finally:
             handle.remove()
 
+    def select_policy(
+        self,
+        prompt: str,
+        policies: list[SteeringPolicy],
+        system_prompt: str | None = None,
+    ) -> SteeringPolicy | None:
+        """Pick the active policy with highest cosine margin in one prefill forward pass."""
+        if not policies:
+            return None
+        if len(policies) == 1:
+            return policies[0]
+
+        formatted = (
+            format_prompt(self.tokenizer, prompt, system_prompt=system_prompt)
+            if system_prompt is not None
+            else format_prompt(self.tokenizer, prompt)
+        )
+        encoded = self.tokenizer(formatted, return_tensors="pt")
+        input_ids = encoded["input_ids"].to(self.device)
+        attention_mask = encoded["attention_mask"].to(self.device)
+
+        layer_acts: dict[int, torch.Tensor] = {}
+        unique_layers = sorted({p.layer_idx for p in policies})
+
+        def make_probe(layer_idx: int):
+            def hook(
+                _mod: nn.Module,
+                _inp: tuple[object, ...],
+                out: torch.Tensor | tuple[torch.Tensor, ...],
+            ) -> None:
+                hidden = extract_hidden_tensor(out)
+                layer_acts[layer_idx] = hidden[:, -1, :].detach().float()
+
+            return hook
+
+        with self._lock, torch.inference_mode():
+            handles = [
+                self._layers[idx].register_forward_hook(make_probe(idx)) for idx in unique_layers
+            ]
+            try:
+                self.model(input_ids=input_ids, attention_mask=attention_mask, use_cache=False)
+            finally:
+                for handle in handles:
+                    handle.remove()
+
+        best_policy = policies[0]
+        best_margin = float("-inf")
+        for policy in policies:
+            act = layer_acts[policy.layer_idx]
+            det = policy.normalized_detector_vector().to(device=act.device).unsqueeze(0)
+            sim = float(F.cosine_similarity(act, det, dim=-1).item())
+            margin = sim - policy.similarity_threshold
+            if margin > best_margin:
+                best_margin = margin
+                best_policy = policy
+        return best_policy
+
     def generate(
         self,
         prompt: str,
